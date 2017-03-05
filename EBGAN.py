@@ -67,8 +67,6 @@ ndf = int(opt.ndf)
 nc = 3
 
 # custom weights initialization called on netG and netD
-
-
 def weights_init(m):
     classname = m.__class__.__name__
     if classname.find('Conv') != -1:
@@ -93,7 +91,7 @@ class _netG(nn.Module):
         # state size. (ngf*4) x 8 x 8
 
         self.convT3 = nn.ConvTranspose2d(ngf * 4, ngf * 2, 4, 2, 1, bias=False)
-        self.bn2 = nn.BatchNorm2d(ngf * 2)
+        self.bn3 = nn.BatchNorm2d(ngf * 2)
         # state size. (ngf*2) x 16 x 16
 
         self.convT4 = nn.ConvTranspose2d(ngf * 2, ngf, 5, 3, 1, bias=False)  # for 96*96 stride = 3
@@ -158,7 +156,7 @@ if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
 
-criterion = nn.BCELoss()
+criterion = nn.BCELoss()   # criterion over here!!!
 
 input = torch.FloatTensor(opt.batchSize, 3, opt.imageSize, opt.imageSize)
 noise = torch.FloatTensor(opt.batchSize, nz, 1, 1)
@@ -188,41 +186,52 @@ for epoch in range(opt.niter):
         ############################
         # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
         ###########################
-        # train with real
         netD.zero_grad()
+
+        # prepare real
         real_cpu, _ = data
         batch_size = real_cpu.size(0)
         input.data.resize_(real_cpu.size()).copy_(real_cpu)
         label.data.resize_(batch_size).fill_(real_label)
 
+        # train with real
         output = netD(input)
-        errD_real = criterion(output, label)
-        errD_real.backward()
-        D_x = output.data.mean()
+        errD_real = criterion(output, label)  # score on real
+        errD_real.backward()  # backward on score on real
+        D_x = output.data.mean()  # score fore supervision
 
-        # train with fake
+        # generate fake
         noise.data.resize_(batch_size, nz, 1, 1)
         noise.data.normal_(0, 1)
         fake = netG(noise)
         label.data.fill_(fake_label)
+
+        # train with fake
         output = netD(fake.detach())
-        errD_fake = criterion(output, label)
-        errD_fake.backward()
-        D_G_z1 = output.data.mean()
-        errD = errD_real + errD_fake
+        errD_fake = criterion(output, label)  # score on fake
+        errD_fake.backward()  # backward on score on fake
+        D_G_z1 = output.data.mean()  # score fore supervision
+        errD = errD_real + errD_fake  # score fore supervision
+
         optimizerD.step()
 
         ############################
         # (2) Update G network: maximize log(D(G(z)))
         ############################
         netG.zero_grad()
-        label.data.fill_(real_label) # fake labels are real for generator cost
+
+        # reuse generated fake samples
+        label.data.fill_(real_label)  # fake labels are real for generator cost
         output = netD(fake)
         errG = criterion(output, label)
         errG.backward()
         D_G_z2 = output.data.mean()
+
         optimizerG.step()
 
+        ############################
+        # (3) Report & 100 Batch checkpoint
+        ############################
         print('[%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f D(G(z)): %.4f / %.4f'
               % (epoch, opt.niter, i, len(dataloader),
                  errD.data[0], errG.data[0], D_x, D_G_z1, D_G_z2))
