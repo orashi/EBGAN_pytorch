@@ -224,7 +224,7 @@ for epoch in range(opt.niter):
 
         ############################
         # (2) Update G network: maximize log(D(G(z)))
-        ###########################
+        ############################
         netG.zero_grad()
         label.data.fill_(real_label) # fake labels are real for generator cost
         output = netD(fake)
