@@ -3,8 +3,8 @@ import argparse
 import os
 import random
 import torch
+import torch.nn.functional as F
 import torch.nn as nn
-import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.optim as optim
 import torch.utils.data
@@ -27,7 +27,6 @@ parser.add_argument('--niter', type=int, default=25, help='number of epochs to t
 parser.add_argument('--lr', type=float, default=0.0002, help='learning rate, default=0.0002')
 parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam. default=0.5')
 parser.add_argument('--cuda'  , action='store_true', help='enables cuda')
-parser.add_argument('--ngpu'  , type=int, default=1, help='number of GPUs to use')
 parser.add_argument('--netG', default='', help="path to netG (to continue training)")
 parser.add_argument('--netD', default='', help="path to netD (to continue training)")
 parser.add_argument('--outf', default='.', help='folder to output images and model checkpoints')
@@ -62,93 +61,98 @@ assert dataset
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
                                          shuffle=True, num_workers=int(opt.workers))
 
-ngpu = int(opt.ngpu)
 nz = int(opt.nz)
 ngf = int(opt.ngf)
 ndf = int(opt.ndf)
 nc = 3
 
 # custom weights initialization called on netG and netD
+
+
 def weights_init(m):
     classname = m.__class__.__name__
     if classname.find('Conv') != -1:
-        #m.weight.data.normal_(0.0, 0.02)   辣鸡
-        n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels            #He et al. 2015  Xavier/2
+        # m.weight.data.normal_(0.0, 0.02)   terrible
+        n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels            # He et al. 2015  Xavier/2
         m.weight.data.normal_(0, math.sqrt(2. / n))
     elif classname.find('BatchNorm') != -1:
         m.weight.data.normal_(1.0, 0.02)
         m.bias.data.fill_(0)
 
-class _netG(nn.Module):
-    def __init__(self, ngpu):
-        super(_netG, self).__init__()
-        self.ngpu = ngpu
-        self.main = nn.Sequential(
-            # input is Z, going into a convolution
-            nn.ConvTranspose2d(     nz, ngf * 8, 4, 1, 0, bias=False),
-            nn.BatchNorm2d(ngf * 8),
-            nn.ReLU(True),
-            # state size. (ngf*8) x 4 x 4
-            nn.ConvTranspose2d(ngf * 8, ngf * 4, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ngf * 4),
-            nn.ReLU(True),
-            # state size. (ngf*4) x 8 x 8
-            nn.ConvTranspose2d(ngf * 4, ngf * 2, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ngf * 2),
-            nn.ReLU(True),
-            # state size. (ngf*2) x 16 x 16
-            nn.ConvTranspose2d(ngf * 2,     ngf, 5, 3, 1, bias=False), #for 96*96 stride = 3
-            nn.BatchNorm2d(ngf),
-            nn.ReLU(True),
-            # state size. (ngf) x 32 x 32
-            nn.ConvTranspose2d(    ngf,      nc, 4, 2, 1, bias=False),
-            nn.Tanh()
-            # state size. (nc) x 64 x 64
-        )
-    def forward(self, input):
-        gpu_ids = None
-        if isinstance(input.data, torch.cuda.FloatTensor) and self.ngpu > 1:
-            gpu_ids = range(self.ngpu)
-        return nn.parallel.data_parallel(self.main, input, gpu_ids)
 
-netG = _netG(ngpu)
+class _netG(nn.Module):
+    def __init__(self):
+        super(_netG, self).__init__()
+
+        self.convT1 = nn.ConvTranspose2d(nz, ngf * 8, 4, 1, 0, bias=False)
+        self.bn1 = nn.BatchNorm2d(ngf * 8)
+        # state size. (ngf*8) x 4 x 4
+
+        self.convT2 = nn.ConvTranspose2d(ngf * 8, ngf * 4, 4, 2, 1, bias=False)
+        self.bn2 = nn.BatchNorm2d(ngf * 4)
+        # state size. (ngf*4) x 8 x 8
+
+        self.convT3 = nn.ConvTranspose2d(ngf * 4, ngf * 2, 4, 2, 1, bias=False)
+        self.bn2 = nn.BatchNorm2d(ngf * 2)
+        # state size. (ngf*2) x 16 x 16
+
+        self.convT4 = nn.ConvTranspose2d(ngf * 2, ngf, 5, 3, 1, bias=False)  # for 96*96 stride = 3
+        self.bn4 = nn.BatchNorm2d(ngf)
+        # state size. (ngf) x 32 x 32
+
+        self.convT5 = nn.ConvTranspose2d(ngf, nc, 4, 2, 1, bias=False)
+        # state size. (nc) x 64 x 64
+
+    def forward(self, x):
+
+        out = F.relu(self.bn1(self.convT1(x)), True)
+        out = F.relu(self.bn2(self.convT2(out)), True)
+        out = F.relu(self.bn3(self.convT3(out)), True)
+        out = F.relu(self.bn4(self.convT4(out)), True)
+        out = F.tanh(self.convT5(out))
+
+        return out
+
+netG = _netG()
 netG.apply(weights_init)
 if opt.netG != '':
     netG.load_state_dict(torch.load(opt.netG))
 print(netG)
 
 class _netD(nn.Module):
-    def __init__(self, ngpu):
+    def __init__(self):
         super(_netD, self).__init__()
-        self.ngpu = ngpu
-        self.main = nn.Sequential(
-            # input is (nc) x 64 x 64   for anime it's 96x96
-            nn.Conv2d(nc, ndf, 4, 2, 1, bias=False),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (ndf) x 32 x 32
-            nn.Conv2d(ndf, ndf * 2, 5, 3, 1, bias=False),#  3 stride for 96
-            nn.BatchNorm2d(ndf * 2),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (ndf*2) x 16 x 16
-            nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ndf * 4),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (ndf*4) x 8 x 8
-            nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ndf * 8),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (ndf*8) x 4 x 4
-            nn.Conv2d(ndf * 8, 1, 4, 1, 0, bias=False),
-            nn.Sigmoid()
-        )
-    def forward(self, input):
-        gpu_ids = None
-        if isinstance(input.data, torch.cuda.FloatTensor) and self.ngpu > 1:
-            gpu_ids = range(self.ngpu)
-        output = nn.parallel.data_parallel(self.main, input, gpu_ids)
-        return output.view(-1, 1)
+        # input is (nc) x 64 x 64   for anime it's 96x96
+        self.conv1 = nn.Conv2d(nc, ndf, 4, 2, 1, bias=False)
+        nn.LeakyReLU(0.2, inplace=True)
+        # state size. (ndf) x 32 x 32
 
-netD = _netD(ngpu)
+        self.conv2 = nn.Conv2d(ndf, ndf * 2, 5, 3, 1, bias=False)  # 3 stride for 96
+        self.bn2 = nn.BatchNorm2d(ndf * 2)
+        nn.LeakyReLU(0.2, inplace=True)
+        # state size. (ndf*2) x 16 x 16
+
+        self.conv3 = nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False)
+        self.bn3 = nn.BatchNorm2d(ndf * 4)
+        nn.LeakyReLU(0.2, inplace=True)
+        # state size. (ndf*4) x 8 x 8
+
+        self.conv4 = nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False)
+        self.bn4 = nn.BatchNorm2d(ndf * 8)
+        nn.LeakyReLU(0.2, inplace=True)
+        # state size. (ndf*8) x 4 x 4
+
+        self.conv5 = nn.Conv2d(ndf * 8, 1, 4, 1, 0, bias=False)
+
+    def forward(self, x):
+        out = F.leaky_relu(self.conv1(x), 0.2, True)
+        out = F.leaky_relu(self.bn2(self.conv2(out)), 0.2, True)
+        out = F.leaky_relu(self.bn3(self.conv3(out)), 0.2, True)
+        out = F.leaky_relu(self.bn4(self.conv4(out)), 0.2, True)
+        out = F.sigmoid(self.conv5(out))
+        return out.view(-1, 1)
+
+netD = _netD()
 netD.apply(weights_init)
 if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
@@ -176,8 +180,8 @@ noise = Variable(noise)
 fixed_noise = Variable(fixed_noise)
 
 # setup optimizer
-optimizerD = optim.Adam(netD.parameters(), lr = opt.lr, betas = (opt.beta1, 0.999))
-optimizerG = optim.Adam(netG.parameters(), lr = opt.lr, betas = (opt.beta1, 0.999))
+optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 
 for epoch in range(opt.niter):
     for i, data in enumerate(dataloader, 0):
