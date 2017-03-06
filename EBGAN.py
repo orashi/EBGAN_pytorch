@@ -68,13 +68,22 @@ nc = 3
 
 
 # custom weights initialization called on netG and netD
-def weights_init(m):
+def G_weights_init(m):
     classname = m.__class__.__name__
     if classname.find('Conv') != -1:
         m.weight.data.normal_(0.0, 0.002)
     elif classname.find('BatchNorm') != -1:
         m.weight.data.normal_(1.0, 0.02)
         m.bias.data.fill_(0)
+
+def D_weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+        m.weight.data.normal_(0.0, 0.02)
+    elif classname.find('BatchNorm') != -1:
+        m.weight.data.normal_(1.0, 0.02)
+        m.bias.data.fill_(0)
+
 
 class _netG(nn.Module):
     def __init__(self):
@@ -110,7 +119,7 @@ class _netG(nn.Module):
         return out
 
 netG = _netG()
-netG.apply(weights_init)
+netG.apply(G_weights_init)
 if opt.netG != '':
     netG.load_state_dict(torch.load(opt.netG))
 print(netG)
@@ -150,7 +159,11 @@ class _netD(nn.Module):
         # state size. 3 x 96 x 96
         ''' stride improvable '''
 
+        self.MSE = nn.MSELoss()
+
     def forward(self, x):
+        residual = x
+
         out = F.leaky_relu(self.enc_conv1(x), 0.2, True)
         out = F.leaky_relu(self.enc_bn2(self.enc_conv2(out)), 0.2, True)
         out = F.leaky_relu(self.enc_bn3(self.enc_conv3(out)), 0.2, True)
@@ -163,10 +176,12 @@ class _netD(nn.Module):
         out = F.leaky_relu(self.dec_bn2(self.dec_conv2(out)), 0.2, True)
         out = self.dec_conv1(out)
 
+
+
         return out
 
 netD = _netD()
-netD.apply(weights_init)
+netD.apply(D_weights_init)
 if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
