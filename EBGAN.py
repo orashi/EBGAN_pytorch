@@ -145,15 +145,15 @@ class _netD(nn.Module):
         # state size. (ndf*8) x 4 x 4
 
         self.dec_conv4 = nn.ConvTranspose2d(ndf * 8, ndf * 4, 4, 2, 1, bias=False)
-        self.dec_bn4 = nn.BatchNorm2d(ndf * 8)
+        self.dec_bn4 = nn.BatchNorm2d(ndf * 4)
         # state size. (ndf*4) x 8 x 8
 
         self.dec_conv3 = nn.ConvTranspose2d(ndf * 4, ndf * 2, 4, 2, 1, bias=False)
-        self.dec_bn3 = nn.BatchNorm2d(ndf * 8)
+        self.dec_bn3 = nn.BatchNorm2d(ndf * 2)
         # state size. (ndf*2) x 16 x 16
 
         self.dec_conv2 = nn.ConvTranspose2d(ndf * 2, ndf, 4, 2, 1, bias=False)
-        self.dec_bn2 = nn.BatchNorm2d(ndf * 8)
+        self.dec_bn2 = nn.BatchNorm2d(ndf)
         # state size. (ndf) x 32 x 32
 
         self.dec_conv1 = nn.ConvTranspose2d(ndf, 3, 5, 3, 0, bias=False)
