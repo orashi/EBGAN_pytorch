@@ -156,9 +156,10 @@ class _netD(nn.Module):
         self.dec_bn2 = nn.BatchNorm2d(ndf)
         # state size. (ndf) x 32 x 32
 
-        self.dec_conv1 = nn.ConvTranspose2d(ndf, 3, 5, 3, 0, bias=False)
+        self.dec_conv1 = nn.ConvTranspose2d(ndf, 3, 5, 3, 1, bias=False)
         # state size. 3 x 96 x 96
         ''' stride improvable '''
+        ''' output padding? '''
 
         self.MSE = nn.MSELoss()
 
