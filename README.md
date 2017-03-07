@@ -9,8 +9,6 @@ with the samples from the generative model.
 
 After every epoch, models are saved to: `netG_epoch_%d.pth` and `netD_epoch_%d.pth`
 
-Network architecture require 96x96 image size but easy to change by customizing convLayers' stride&kernel size.
-
 ##To do
 
 1. Generator noise

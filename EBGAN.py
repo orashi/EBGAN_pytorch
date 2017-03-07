@@ -106,8 +106,8 @@ class _netG(nn.Module):
         self.bn4 = nn.BatchNorm2d(ngf)
         # state size. (ngf) x 32 x 32
 
-        self.convT5 = nn.ConvTranspose2d(ngf, nc, 5, 3, 1, bias=False)
-        # state size. (nc) x 96 x 96
+        self.convT5 = nn.ConvTranspose2d(ngf, nc, 4, 2, 1, bias=False)
+        # state size. (nc) x 64 x 64
 
     def forward(self, x):
 
@@ -128,11 +128,11 @@ print(netG)
 class _netD(nn.Module):
     def __init__(self):
         super(_netD, self).__init__()
-        # input is (nc) x 96 x 96 (for anime image)
-        self.enc_conv1 = nn.Conv2d(nc, ndf, 5, 3, 1, bias=False)
+        # input is (nc) x 64 x 64
+        self.enc_conv1 = nn.Conv2d(nc, ndf, 4, 2, 1, bias=False)
         # state size. (ndf) x 32 x 32
 
-        self.enc_conv2 = nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False)  # 3 stride for 96
+        self.enc_conv2 = nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False)
         self.enc_bn2 = nn.BatchNorm2d(ndf * 2)
         # state size. (ndf*2) x 16 x 16
 
@@ -156,8 +156,8 @@ class _netD(nn.Module):
         self.dec_bn2 = nn.BatchNorm2d(ndf)
         # state size. (ndf) x 32 x 32
 
-        self.dec_conv1 = nn.ConvTranspose2d(ndf, 3, 5, 3, 1, bias=False)
-        # state size. 3 x 96 x 96
+        self.dec_conv1 = nn.ConvTranspose2d(ndf, 3, 4, 2, 1, bias=False)
+        # state size. 3 x 64 x 64
         ''' stride improvable '''
 
         self.MSE = nn.MSELoss()
@@ -217,7 +217,7 @@ optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 for epoch in range(opt.niter):
     for i, data in enumerate(dataloader, 0):
         ############################
-        # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
+        # (1) Update D network
         ###########################
         netD.zero_grad()
 
@@ -249,7 +249,7 @@ for epoch in range(opt.niter):
         optimizerD.step()
 
         ############################
-        # (2) Update G network: maximize log(D(G(z)))
+        # (2) Update G network
         ############################
         netG.zero_grad()
 
