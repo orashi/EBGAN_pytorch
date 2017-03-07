@@ -11,7 +11,7 @@ After every epoch, models are saved to: `netG_epoch_%d.pth` and `netD_epoch_%d.p
 
 Network architecture require 96x96 image size but easy to change by customizing convLayers' stride&kernel size.
 
-##To od
+##To do
 
 1. Generator noise
 2. Repelling regularizer
