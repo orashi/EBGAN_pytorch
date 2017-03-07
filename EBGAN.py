@@ -18,11 +18,12 @@ import math
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataroot', required=True, help='path to dataset')
 parser.add_argument('--workers', type=int, help='number of data loading workers', default=2)
-parser.add_argument('--batchSize', type=int, default=64, help='input batch size')
+parser.add_argument('--batchSize', type=int, default=100, help='input batch size')
 parser.add_argument('--imageSize', type=int, default=64, help='the height / width of the input image to network')
 parser.add_argument('--nz', type=int, default=100, help='size of the latent z vector')
 parser.add_argument('--ngf', type=int, default=96)
 parser.add_argument('--ndf', type=int, default=96)
+parser.add_argument('--margin', type=float, default=80)
 parser.add_argument('--niter', type=int, default=25, help='number of epochs to train for')
 parser.add_argument('--lr', type=float, default=0.0002, help='learning rate, default=0.0002')
 parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam. default=0.5')
@@ -65,7 +66,7 @@ nz = int(opt.nz)
 ngf = int(opt.ngf)
 ndf = int(opt.ndf)
 nc = 3
-
+margin = int(opt.margin)
 
 # custom weights initialization called on netG and netD
 def G_weights_init(m):
@@ -84,7 +85,7 @@ def D_weights_init(m):
         m.weight.data.normal_(1.0, 0.02)
         m.bias.data.fill_(0)
 
-
+''' add noise? '''
 class _netG(nn.Module):
     def __init__(self):
         super(_netG, self).__init__()
@@ -186,30 +187,32 @@ if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
 
-criterion = nn.BCELoss()   # criterion over here!!!
+# criterion = nn.BCELoss()   # criterion over here!!!
+criterion_MSE = nn.MSELoss()
+criterion_L1 = nn.L1Loss()
 
 input = torch.FloatTensor(opt.batchSize, 3, opt.imageSize, opt.imageSize)
 noise = torch.FloatTensor(opt.batchSize, nz, 1, 1)
 fixed_noise = torch.FloatTensor(opt.batchSize, nz, 1, 1).normal_(0, 1)
-label = torch.FloatTensor(opt.batchSize)
-real_label = 1
-fake_label = 0
+
 
 if opt.cuda:
     netD.cuda()
     netG.cuda()
-    criterion.cuda()
-    input, label = input.cuda(), label.cuda()
+    criterion_MSE.cuda()
+    criterion_L1.cuda()
+    input = input.cuda()
     noise, fixed_noise = noise.cuda(), fixed_noise.cuda()
 
 input = Variable(input)
-label = Variable(label)
 noise = Variable(noise)
 fixed_noise = Variable(fixed_noise)
 
 # setup optimizer
 optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+''' learning rate???'''
+
 
 for epoch in range(opt.niter):
     for i, data in enumerate(dataloader, 0):
@@ -222,26 +225,26 @@ for epoch in range(opt.niter):
         real_cpu, _ = data
         batch_size = real_cpu.size(0)
         input.data.resize_(real_cpu.size()).copy_(real_cpu)
-        label.data.resize_(batch_size).fill_(real_label)
 
         # train with real
         output = netD(input)
-        errD_real = criterion(output, label)  # score on real
-        errD_real.backward()  # backward on score on real
-        D_x = output.data.mean()  # score fore supervision
+        energyD_real = criterion_MSE(output, input)  # score on real
+        energyD_real.backward(retain_variables=True)  # backward on score on real
+        D_x = energyD_real.data.mean()  # score fore supervision
 
         # generate fake
         noise.data.resize_(batch_size, nz, 1, 1)
         noise.data.normal_(0, 1)
         fake = netG(noise)
-        label.data.fill_(fake_label)
 
         # train with fake
         output = netD(fake.detach())
-        errD_fake = criterion(output, label)  # score on fake
+        energyD_fake = criterion_MSE(output, fake.detach())  # score on fake
+        errD_fake = margin - energyD_fake
+        errD_fake = errD_fake.clamp(min=0)
         errD_fake.backward()  # backward on score on fake
-        D_G_z1 = output.data.mean()  # score fore supervision
-        errD = errD_real + errD_fake  # score fore supervision
+        D_G_z1 = energyD_fake.data.mean()  # score fore supervision
+        errD = (energyD_real + errD_fake) / 2  # score fore supervision
 
         optimizerD.step()
 
@@ -251,11 +254,10 @@ for epoch in range(opt.niter):
         netG.zero_grad()
 
         # reuse generated fake samples
-        label.data.fill_(real_label)  # fake labels are real for generator cost
-        output = netD(fake)
-        errG = criterion(output, label)
+        output = netD(fake.detach())
+        errG = criterion_MSE(output, fake.detach())
         errG.backward()
-        D_G_z2 = output.data.mean()
+        D_G_z2 = errG.data.mean()
 
         optimizerG.step()
 
