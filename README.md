@@ -11,8 +11,7 @@ After every epoch, models are saved to: `netG_epoch_%d.pth` and `netD_epoch_%d.p
 
 ##To do
 
-1. Generator noise
-2. Repelling regularizer
+Repelling regularizer
 
 ##Usage
 ```
