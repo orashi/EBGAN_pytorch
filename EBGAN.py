@@ -21,8 +21,8 @@ parser.add_argument('--workers', type=int, help='number of data loading workers'
 parser.add_argument('--batchSize', type=int, default=100, help='input batch size')
 parser.add_argument('--imageSize', type=int, default=64, help='the height / width of the input image to network')
 parser.add_argument('--nz', type=int, default=100, help='size of the latent z vector')
-parser.add_argument('--ngf', type=int, default=96)
-parser.add_argument('--ndf', type=int, default=96)
+parser.add_argument('--ngf', type=int, default=64)
+parser.add_argument('--ndf', type=int, default=64)
 parser.add_argument('--margin', type=float, default=80, help='margin of the energy loss')
 parser.add_argument('--niter', type=int, default=25, help='number of epochs to train for')
 parser.add_argument('--lr', type=float, default=0.0002, help='learning rate, default=0.0002')
@@ -85,6 +85,13 @@ def D_weights_init(m):
         m.weight.data.normal_(1.0, 0.02)
         m.bias.data.fill_(0)
 
+def pullaway_loss(embeddings):
+    norm = embeddings.norm(2,3).norm(2,2).norm(2,1).repeat(1, embeddings.size()[1],
+                                                           embeddings.size()[2], embeddings.size()[3])
+    normalized_embeddings = embeddings / norm
+
+
+
 ''' add noise? '''
 class _netG(nn.Module):
     def __init__(self):
@@ -94,28 +101,53 @@ class _netG(nn.Module):
         self.bn1 = nn.BatchNorm2d(ngf * 8)
         # state size. (ngf*8) x 4 x 4
 
-        self.convT2 = nn.ConvTranspose2d(ngf * 8, ngf * 4, 4, 2, 1, bias=False)
+        self.convT2 = nn.ConvTranspose2d(ngf * 8 + 64, ngf * 4, 4, 2, 1, bias=False)
         self.bn2 = nn.BatchNorm2d(ngf * 4)
         # state size. (ngf*4) x 8 x 8
 
-        self.convT3 = nn.ConvTranspose2d(ngf * 4, ngf * 2, 4, 2, 1, bias=False)
+        self.convT3 = nn.ConvTranspose2d(ngf * 4 + 32, ngf * 2, 4, 2, 1, bias=False)
         self.bn3 = nn.BatchNorm2d(ngf * 2)
         # state size. (ngf*2) x 16 x 16
 
-        self.convT4 = nn.ConvTranspose2d(ngf * 2, ngf, 4, 2, 1, bias=False)
+        self.convT4 = nn.ConvTranspose2d(ngf * 2 + 16, ngf, 4, 2, 1, bias=False)
         self.bn4 = nn.BatchNorm2d(ngf)
         # state size. (ngf) x 32 x 32
 
-        self.convT5 = nn.ConvTranspose2d(ngf, nc, 4, 2, 1, bias=False)
+        self.convT5 = nn.ConvTranspose2d(ngf + 8, ngf, 4, 2, 1, bias=False)
+        self.bn5 = nn.BatchNorm2d(ngf)
+        # state size. (ngf) x 64 x 64
+
+        self.convT6 = nn.ConvTranspose2d(ngf + 4, nc, 3, 1, 1, bias=False)
         # state size. (nc) x 64 x 64
 
     def forward(self, x):
 
         out = F.relu(self.bn1(self.convT1(x)), True)
+        noise = Variable(torch.FloatTensor(opt.batchSize, 64, 4, 4))
+        noise.data.normal_(0, 1)
+        out = torch.cat([out, noise.cuda()], 1)  # feed noise
+
         out = F.relu(self.bn2(self.convT2(out)), True)
+        noise = Variable(torch.FloatTensor(opt.batchSize, 32, 8, 8))
+        noise.data.normal_(0, 1)
+        out = torch.cat([out, noise.cuda()], 1)  # feed noise
+
         out = F.relu(self.bn3(self.convT3(out)), True)
+        noise = Variable(torch.FloatTensor(opt.batchSize, 16, 16, 16))
+        noise.data.normal_(0, 1)
+        out = torch.cat([out, noise.cuda()], 1)  # feed noise
+
         out = F.relu(self.bn4(self.convT4(out)), True)
-        out = F.tanh(self.convT5(out))
+        noise = Variable(torch.FloatTensor(opt.batchSize, 8, 32, 32))
+        noise.data.normal_(0, 1)
+        out = torch.cat([out, noise.cuda()], 1)  # feed noise
+
+        out = F.relu(self.bn5(self.convT5(out)), True)
+        noise = Variable(torch.FloatTensor(opt.batchSize, 4, 64, 64))
+        noise.data.normal_(0, 1)
+        out = torch.cat([out, noise.cuda()], 1)  # feed noise
+
+        out = F.tanh(self.convT6(out))
 
         return out
 
@@ -170,7 +202,7 @@ class _netD(nn.Module):
         out = F.leaky_relu(self.enc_bn3(self.enc_conv3(out)), 0.2, True)
         out = F.leaky_relu(self.enc_bn4(self.enc_conv4(out)), 0.2, True)
 
-        ''' question: fc layer???? '''
+        embeddings = out
 
         out = F.leaky_relu(self.dec_bn4(self.dec_conv4(out)), 0.2, True)
         out = F.leaky_relu(self.dec_bn3(self.dec_conv3(out)), 0.2, True)
@@ -179,7 +211,7 @@ class _netD(nn.Module):
 
 
 
-        return out
+        return out, embeddings
 
 netD = _netD()
 netD.apply(D_weights_init)
@@ -211,7 +243,6 @@ fixed_noise = Variable(fixed_noise)
 # setup optimizer
 optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
-''' learning rate???'''
 
 
 for epoch in range(opt.niter):
@@ -227,7 +258,7 @@ for epoch in range(opt.niter):
         input.data.resize_(real_cpu.size()).copy_(real_cpu)
 
         # train with real
-        output = netD(input)
+        output, _ = netD(input)
         energyD_real = criterion_MSE(output, input)  # score on real
         energyD_real.backward(retain_variables=True)  # backward on score on real
         D_x = energyD_real.data.mean()  # score fore supervision
@@ -238,10 +269,11 @@ for epoch in range(opt.niter):
         fake = netG(noise)
 
         # train with fake
-        output = netD(fake.detach())
+        output, _ = netD(fake.detach())
         energyD_fake = criterion_MSE(output, fake.detach())  # score on fake
         errD_fake = margin - energyD_fake
         errD_fake = errD_fake.clamp(min=0)
+
         errD_fake.backward()  # backward on score on fake
         D_G_z1 = energyD_fake.data.mean()  # score fore supervision
         errD = (energyD_real + errD_fake) / 2  # score fore supervision
@@ -254,8 +286,9 @@ for epoch in range(opt.niter):
         netG.zero_grad()
 
         # reuse generated fake samples
-        output = netD(fake)
+        output, embeddings = netD(fake)
         errG = (output - fake).pow(2).mean()  # MSE
+
         errG.backward()
         D_G_z2 = errG.data.mean()
 
