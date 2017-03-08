@@ -100,52 +100,53 @@ class _netG(nn.Module):
         self.convT1 = nn.ConvTranspose2d(nz, ngf * 8, 4, 1, 0, bias=False)
         self.bn1 = nn.BatchNorm2d(ngf * 8)
         # state size. (ngf*8) x 4 x 4
+        # self.noise1 = Variable(torch.FloatTensor(opt.batchSize, 16, 4, 4)).cuda()
 
-        self.convT2 = nn.ConvTranspose2d(ngf * 8 + 64, ngf * 4, 4, 2, 1, bias=False)
+        self.convT2 = nn.ConvTranspose2d(ngf * 8, ngf * 4, 4, 2, 1, bias=False)
         self.bn2 = nn.BatchNorm2d(ngf * 4)
         # state size. (ngf*4) x 8 x 8
+        # self.noise2 = Variable(torch.FloatTensor(opt.batchSize, 8, 8, 8)).cuda()
 
-        self.convT3 = nn.ConvTranspose2d(ngf * 4 + 32, ngf * 2, 4, 2, 1, bias=False)
+        self.convT3 = nn.ConvTranspose2d(ngf * 4, ngf * 2, 4, 2, 1, bias=False)
         self.bn3 = nn.BatchNorm2d(ngf * 2)
         # state size. (ngf*2) x 16 x 16
+        # self.noise3 = Variable(torch.FloatTensor(opt.batchSize, 4, 16, 16)).cuda()
 
-        self.convT4 = nn.ConvTranspose2d(ngf * 2 + 16, ngf, 4, 2, 1, bias=False)
+        self.convT4 = nn.ConvTranspose2d(ngf * 2, ngf, 4, 2, 1, bias=False)
         self.bn4 = nn.BatchNorm2d(ngf)
         # state size. (ngf) x 32 x 32
+        # self.noise4 = Variable(torch.FloatTensor(opt.batchSize, 2, 32, 32)).cuda()
 
-        self.convT5 = nn.ConvTranspose2d(ngf + 8, ngf, 4, 2, 1, bias=False)
+        self.convT5 = nn.ConvTranspose2d(ngf, ngf, 4, 2, 1, bias=False)
         self.bn5 = nn.BatchNorm2d(ngf)
         # state size. (ngf) x 64 x 64
+        # self.noise5 = Variable(torch.FloatTensor(opt.batchSize, 1, 64, 64)).cuda()
 
-        self.convT6 = nn.ConvTranspose2d(ngf + 4, nc, 3, 1, 1, bias=False)
+        self.convT6 = nn.ConvTranspose2d(ngf, nc, 3, 1, 1, bias=False)
         # state size. (nc) x 64 x 64
 
     def forward(self, x):
 
         out = F.relu(self.bn1(self.convT1(x)), True)
-        noise = Variable(torch.FloatTensor(opt.batchSize, 64, 4, 4))
-        noise.data.normal_(0, 1)
-        out = torch.cat([out, noise.cuda()], 1)  # feed noise
+        # self.noise1.data.normal_(0, 1)
+        # out = torch.cat([out, self.noise1], 1)  # feed noise
+        """ removed for out of mrmory """
 
         out = F.relu(self.bn2(self.convT2(out)), True)
-        noise = Variable(torch.FloatTensor(opt.batchSize, 32, 8, 8))
-        noise.data.normal_(0, 1)
-        out = torch.cat([out, noise.cuda()], 1)  # feed noise
+        # self.noise2.data.normal_(0, 1)
+        # out = torch.cat([out, self.noise2], 1)  # feed noise
 
         out = F.relu(self.bn3(self.convT3(out)), True)
-        noise = Variable(torch.FloatTensor(opt.batchSize, 16, 16, 16))
-        noise.data.normal_(0, 1)
-        out = torch.cat([out, noise.cuda()], 1)  # feed noise
+        # self.noise3.data.normal_(0, 1)
+        # out = torch.cat([out, self.noise3], 1)  # feed noise
 
         out = F.relu(self.bn4(self.convT4(out)), True)
-        noise = Variable(torch.FloatTensor(opt.batchSize, 8, 32, 32))
-        noise.data.normal_(0, 1)
-        out = torch.cat([out, noise.cuda()], 1)  # feed noise
+        # self.noise4.data.normal_(0, 1)
+        # out = torch.cat([out, self.noise4], 1)  # feed noise
 
         out = F.relu(self.bn5(self.convT5(out)), True)
-        noise = Variable(torch.FloatTensor(opt.batchSize, 4, 64, 64))
-        noise.data.normal_(0, 1)
-        out = torch.cat([out, noise.cuda()], 1)  # feed noise
+        # self.noise5.data.normal_(0, 1)
+        # out = torch.cat([out, self.noise5], 1)  # feed noise
 
         out = F.tanh(self.convT6(out))
 
@@ -195,14 +196,13 @@ class _netD(nn.Module):
         self.MSE = nn.MSELoss()
 
     def forward(self, x):
-        residual = x
 
         out = F.leaky_relu(self.enc_conv1(x), 0.2, True)
         out = F.leaky_relu(self.enc_bn2(self.enc_conv2(out)), 0.2, True)
         out = F.leaky_relu(self.enc_bn3(self.enc_conv3(out)), 0.2, True)
         out = F.leaky_relu(self.enc_bn4(self.enc_conv4(out)), 0.2, True)
 
-        embeddings = out
+        # embeddings = out
 
         out = F.leaky_relu(self.dec_bn4(self.dec_conv4(out)), 0.2, True)
         out = F.leaky_relu(self.dec_bn3(self.dec_conv3(out)), 0.2, True)
@@ -211,7 +211,7 @@ class _netD(nn.Module):
 
 
 
-        return out, embeddings
+        return out  #, embeddings
 
 netD = _netD()
 netD.apply(D_weights_init)
@@ -221,7 +221,6 @@ print(netD)
 
 # criterion = nn.BCELoss()   # criterion over here!!!
 criterion_MSE = nn.MSELoss()
-criterion_L1 = nn.L1Loss()
 
 input = torch.FloatTensor(opt.batchSize, 3, opt.imageSize, opt.imageSize)
 noise = torch.FloatTensor(opt.batchSize, nz, 1, 1)
@@ -232,7 +231,6 @@ if opt.cuda:
     netD.cuda()
     netG.cuda()
     criterion_MSE.cuda()
-    criterion_L1.cuda()
     input = input.cuda()
     noise, fixed_noise = noise.cuda(), fixed_noise.cuda()
 
@@ -258,7 +256,7 @@ for epoch in range(opt.niter):
         input.data.resize_(real_cpu.size()).copy_(real_cpu)
 
         # train with real
-        output, _ = netD(input)
+        output = netD(input)
         energyD_real = criterion_MSE(output, input)  # score on real
         energyD_real.backward(retain_variables=True)  # backward on score on real
         D_x = energyD_real.data.mean()  # score fore supervision
@@ -269,7 +267,7 @@ for epoch in range(opt.niter):
         fake = netG(noise)
 
         # train with fake
-        output, _ = netD(fake.detach())
+        output = netD(fake.detach())
         energyD_fake = criterion_MSE(output, fake.detach())  # score on fake
         errD_fake = margin - energyD_fake
         errD_fake = errD_fake.clamp(min=0)
@@ -286,7 +284,7 @@ for epoch in range(opt.niter):
         netG.zero_grad()
 
         # reuse generated fake samples
-        output, embeddings = netD(fake)
+        output = netD(fake)
         errG = (output - fake).pow(2).mean()  # MSE
 
         errG.backward()
