@@ -1,6 +1,6 @@
 # EBGAN_pytorch
 
-PyTorch implementation of [Energy-Based Generative Adversarial Networks] (https://arxiv.org/abs/1609.03126）
+PyTorch implementation of [Energy-Based Generative Adversarial Networks] (https://arxiv.org/abs/1609.03126)
 
 Some code derives from pytorch official example [dcgan] (https://github.com/pytorch/examples/tree/master/dcgan)
 
