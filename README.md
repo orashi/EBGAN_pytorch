@@ -1,19 +1,19 @@
 # EBGAN_pytorch
 
-PyTorch implementation of [Energy-Based Generative Adversarial Networks] (https://arxiv.org/abs/1609.03126)
+PyTorch implementation of [Energy-Based Generative Adversarial Networks](https://arxiv.org/abs/1609.03126)
 
-Some code derives from pytorch official example [dcgan] (https://github.com/pytorch/examples/tree/master/dcgan)
+Some code derives from pytorch official example [dcgan](https://github.com/pytorch/examples/tree/master/dcgan)
 
 After every 100 training iterations, the files `real_samples.png` and `fake_samples.png` are written to disk
 with the samples from the generative model.
 
 After every epoch, models are saved to: `netG_epoch_%d.pth` and `netD_epoch_%d.pth`
 
-##To do
+## To do
 
 Repelling regularizer
 
-##Usage
+## Usage
 ```
   -h, --help            show this help message and exit
   --dataroot            path to dataset
