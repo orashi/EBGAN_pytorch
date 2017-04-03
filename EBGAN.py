@@ -14,11 +14,10 @@ import torchvision.utils as vutils
 from torch.autograd import Variable
 import math
 
-
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataroot', required=True, help='path to dataset')
 parser.add_argument('--workers', type=int, help='number of data loading workers', default=2)
-parser.add_argument('--batchSize', type=int, default=100, help='input batch size')
+parser.add_argument('--batchSize', type=int, default=64, help='input batch size')
 parser.add_argument('--imageSize', type=int, default=64, help='the height / width of the input image to network')
 parser.add_argument('--nz', type=int, default=100, help='size of the latent z vector')
 parser.add_argument('--ngf', type=int, default=64)
@@ -39,7 +38,7 @@ try:
     os.makedirs(opt.outf)
 except OSError:
     pass
-opt.manualSeed = random.randint(1, 10000) # fix seed
+opt.manualSeed = random.randint(1, 10000)  # fix seed
 print("Random Seed: ", opt.manualSeed)
 random.seed(opt.manualSeed)
 torch.manual_seed(opt.manualSeed)
@@ -68,6 +67,7 @@ ndf = int(opt.ndf)
 nc = 3
 margin = int(opt.margin)
 
+
 # custom weights initialization called on netG and netD
 def G_weights_init(m):
     classname = m.__class__.__name__
@@ -77,6 +77,7 @@ def G_weights_init(m):
         m.weight.data.normal_(1.0, 0.02)
         m.bias.data.fill_(0)
 
+
 def D_weights_init(m):
     classname = m.__class__.__name__
     if classname.find('Conv') != -1:
@@ -85,14 +86,16 @@ def D_weights_init(m):
         m.weight.data.normal_(1.0, 0.02)
         m.bias.data.fill_(0)
 
+
 def pullaway_loss(embeddings):
-    norm = embeddings.norm(2,3).norm(2,2).norm(2,1).repeat(1, embeddings.size()[1],
-                                                           embeddings.size()[2], embeddings.size()[3])
+    norm = embeddings.norm(2, 3).norm(2, 2).norm(2, 1).repeat(1, embeddings.size()[1],
+                                                              embeddings.size()[2], embeddings.size()[3])
     normalized_embeddings = embeddings / norm
 
 
-
 ''' add noise? '''
+
+
 class _netG(nn.Module):
     def __init__(self):
         super(_netG, self).__init__()
@@ -100,63 +103,68 @@ class _netG(nn.Module):
         self.convT1 = nn.ConvTranspose2d(nz, ngf * 8, 4, 1, 0, bias=False)
         self.bn1 = nn.BatchNorm2d(ngf * 8)
         # state size. (ngf*8) x 4 x 4
-        # self.noise1 = Variable(torch.FloatTensor(opt.batchSize, 16, 4, 4)).cuda()
+        self.noise1 = Variable(torch.FloatTensor(opt.batchSize, 64, 4, 4)).cuda()
 
-        self.convT2 = nn.ConvTranspose2d(ngf * 8, ngf * 4, 4, 2, 1, bias=False)
+        self.convT2 = nn.ConvTranspose2d(ngf * 8 + 64, ngf * 4, 4, 2, 1, bias=False)
         self.bn2 = nn.BatchNorm2d(ngf * 4)
         # state size. (ngf*4) x 8 x 8
-        # self.noise2 = Variable(torch.FloatTensor(opt.batchSize, 8, 8, 8)).cuda()
+        self.noise2 = Variable(torch.FloatTensor(opt.batchSize, 32, 8, 8)).cuda()
 
-        self.convT3 = nn.ConvTranspose2d(ngf * 4, ngf * 2, 4, 2, 1, bias=False)
+        self.convT3 = nn.ConvTranspose2d(ngf * 4 + 32, ngf * 2, 4, 2, 1, bias=False)
         self.bn3 = nn.BatchNorm2d(ngf * 2)
         # state size. (ngf*2) x 16 x 16
-        # self.noise3 = Variable(torch.FloatTensor(opt.batchSize, 4, 16, 16)).cuda()
+        self.noise3 = Variable(torch.FloatTensor(opt.batchSize, 16, 16, 16)).cuda()
 
-        self.convT4 = nn.ConvTranspose2d(ngf * 2, ngf, 4, 2, 1, bias=False)
+        self.convT4 = nn.ConvTranspose2d(ngf * 2 + 16, ngf, 4, 2, 1, bias=False)
         self.bn4 = nn.BatchNorm2d(ngf)
         # state size. (ngf) x 32 x 32
-        # self.noise4 = Variable(torch.FloatTensor(opt.batchSize, 2, 32, 32)).cuda()
+        self.noise4 = Variable(torch.FloatTensor(opt.batchSize, 8, 32, 32)).cuda()
 
-        self.convT5 = nn.ConvTranspose2d(ngf, ngf, 4, 2, 1, bias=False)
+        self.convT5 = nn.ConvTranspose2d(ngf + 8, ngf, 4, 2, 1, bias=False)
         self.bn5 = nn.BatchNorm2d(ngf)
         # state size. (ngf) x 64 x 64
-        # self.noise5 = Variable(torch.FloatTensor(opt.batchSize, 1, 64, 64)).cuda()
+        self.noise5 = Variable(torch.FloatTensor(opt.batchSize, 4, 64, 64)).cuda()
 
-        self.convT6 = nn.ConvTranspose2d(ngf, nc, 3, 1, 1, bias=False)
+        self.convT6 = nn.ConvTranspose2d(ngf + 4, nc, 3, 1, 1, bias=False)
         # state size. (nc) x 64 x 64
 
     def forward(self, x):
-
         out = F.relu(self.bn1(self.convT1(x)), True)
-        # self.noise1.data.normal_(0, 1)
-        # out = torch.cat([out, self.noise1], 1)  # feed noise
-        """ removed for out of mrmory """
+        self.noise1.data.resize_(x.size()[0], 64, 4, 4)
+        self.noise1.data.normal_(0, 1)
+        out = torch.cat([out, self.noise1], 1)  # feed noise
 
         out = F.relu(self.bn2(self.convT2(out)), True)
-        # self.noise2.data.normal_(0, 1)
-        # out = torch.cat([out, self.noise2], 1)  # feed noise
+        self.noise2.data.resize_(x.size()[0], 32, 8, 8)
+        self.noise2.data.normal_(0, 1)
+        out = torch.cat([out, self.noise2], 1)  # feed noise
 
         out = F.relu(self.bn3(self.convT3(out)), True)
-        # self.noise3.data.normal_(0, 1)
-        # out = torch.cat([out, self.noise3], 1)  # feed noise
+        self.noise3.data.resize_(x.size()[0], 16, 16, 16)
+        self.noise3.data.normal_(0, 1)
+        out = torch.cat([out, self.noise3], 1)  # feed noise
 
         out = F.relu(self.bn4(self.convT4(out)), True)
-        # self.noise4.data.normal_(0, 1)
-        # out = torch.cat([out, self.noise4], 1)  # feed noise
+        self.noise4.data.resize_(x.size()[0], 8, 32, 32)
+        self.noise4.data.normal_(0, 1)
+        out = torch.cat([out, self.noise4], 1)  # feed noise
 
         out = F.relu(self.bn5(self.convT5(out)), True)
-        # self.noise5.data.normal_(0, 1)
-        # out = torch.cat([out, self.noise5], 1)  # feed noise
+        self.noise5.data.resize_(x.size()[0], 4, 64, 64)
+        self.noise5.data.normal_(0, 1)
+        out = torch.cat([out, self.noise5], 1)  # feed noise
 
         out = F.tanh(self.convT6(out))
 
         return out
+
 
 netG = _netG()
 netG.apply(G_weights_init)
 if opt.netG != '':
     netG.load_state_dict(torch.load(opt.netG))
 print(netG)
+
 
 class _netD(nn.Module):
     def __init__(self):
@@ -196,7 +204,6 @@ class _netD(nn.Module):
         self.MSE = nn.MSELoss()
 
     def forward(self, x):
-
         out = F.leaky_relu(self.enc_conv1(x), 0.2, True)
         out = F.leaky_relu(self.enc_bn2(self.enc_conv2(out)), 0.2, True)
         out = F.leaky_relu(self.enc_bn3(self.enc_conv3(out)), 0.2, True)
@@ -209,9 +216,8 @@ class _netD(nn.Module):
         out = F.leaky_relu(self.dec_bn2(self.dec_conv2(out)), 0.2, True)
         out = self.dec_conv1(out)
 
+        return out  # , embeddings
 
-
-        return out  #, embeddings
 
 netD = _netD()
 netD.apply(D_weights_init)
@@ -225,7 +231,6 @@ criterion_MSE = nn.MSELoss()
 input = torch.FloatTensor(opt.batchSize, 3, opt.imageSize, opt.imageSize)
 noise = torch.FloatTensor(opt.batchSize, nz, 1, 1)
 fixed_noise = torch.FloatTensor(opt.batchSize, nz, 1, 1).normal_(0, 1)
-
 
 if opt.cuda:
     netD.cuda()
@@ -241,7 +246,6 @@ fixed_noise = Variable(fixed_noise)
 # setup optimizer
 optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
-
 
 for epoch in range(opt.niter):
     for i, data in enumerate(dataloader, 0):
@@ -300,13 +304,13 @@ for epoch in range(opt.niter):
                  errD.data[0], errG.data[0], D_x, D_G_z1, D_G_z2))
         if i % 100 == 0:
             vutils.save_image(real_cpu,
-                    '%s/real_samples.png' % opt.outf)
+                              '%s/real_samples.png' % opt.outf)
             fake = netG(fixed_noise)
             vutils.save_image(fake.data,
-                    '%s/fake_samples_epoch_%03d.png' % (opt.outf, epoch))
+                              '%s/fake_samples_epoch_%03d.png' % (opt.outf, epoch))
 
     # do checkpointing
     torch.save(netG.state_dict(), '%s/netG_epoch_%d.pth' % (opt.outf, epoch))
     torch.save(netD.state_dict(), '%s/netD_epoch_%d.pth' % (opt.outf, epoch))
 
-# TODO: Repelling regularizer
+    # TODO: Repelling regularizer
